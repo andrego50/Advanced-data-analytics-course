@@ -1,0 +1,1000 @@
+# Appendix 3 - Oswald Morales
+
+## Seleccion del conjunto de datos
+
+Se carga el archivo inicial llamado "crime_spatial_course.gpkg" y se procede a filtrar las filas relevantes para en analisis posterior, en este caso, a criterio del analista se decide remover filas como los identificadores urbanos y censales (setu_XXXX, secu_XXXX, etc...), los identificadores de tipo de construccion (XXX_ctstr), se retienen los identificadores de municipio, manzana, el area de las manzanas y el numero de viviendas por manzana.
+
+
+```{r setup, include=FALSE}
+# Evitar notación científica en todo el documento
+options(scipen = 999)
+```
+
+```{r, message=FALSE, warning=FALSE}
+#| echo : false
+#| include: false
+source('setup.R')
+
+# Load the dataset
+delitos_data <- st_read("data/spatial/crime_spatial_course.gpkg")
+delitos_data_limpio <- delitos_data %>%
+  select(
+    dpto_ccdgo,
+    mpio_ccdgo,
+    mpio_cdpmp,
+    manz_ccdgo,
+    manz_narea,
+    MANZ_VIV,
+    starts_with("sum_"),
+    geom
+  )
+```
+
+
+
+Posterior a esto se hace un análisis inicial, en este caso comparando el efecto de las capitales en los datos de delito para los departamentos de Atlántico, Antioquia y Cundinamarca.
+
+Se crean los dataframes independientes:
+
+
+
+```{r}
+#Departamentos
+delitos_data_Antioquia <- delitos_data[delitos_data$dpto_ccdgo == c('05'), ]
+delitos_data_Cundinamarca <- delitos_data[delitos_data$dpto_ccdgo == c('11'), ]
+delitos_data_Atlantico <- delitos_data[delitos_data$dpto_ccdgo == c('08'), ]
+
+# Capitales
+Delitos_Medellin <- delitos_data_limpio %>%
+  filter(mpio_cdpmp == "05001")
+
+Delitos_Bogota <- delitos_data_limpio %>%
+  filter(mpio_cdpmp == "11001")
+
+Delitos_Barranquilla <- delitos_data_limpio %>%
+  filter(mpio_cdpmp == "08001")
+
+# No capitales
+Delitos_Antioquia_NoCapital <- delitos_data_limpio %>%
+  filter(dpto_ccdgo == "05" & mpio_cdpmp != "05001")
+
+Delitos_Cundinamarca_NoCapital <- delitos_data_limpio %>%
+  filter(dpto_ccdgo == "11" & mpio_cdpmp != "11001")
+
+Delitos_Atlantico_NoCapital <- delitos_data_limpio %>%
+  filter(dpto_ccdgo == "08" & mpio_cdpmp != "08001")
+
+Delitos_ZonaMetBaq <- delitos_data_limpio %>%
+  filter(mpio_cdpmp %in% c("08758", "08296", "08433", "08573","08001"))
+```
+
+
+
+Se seleccionan los delitos relevantes, en este caso los delitos relacionados a Hurtos y Homicidios unicamente.
+
+
+
+```{r}
+library(stringr)
+
+resumir_delitos <- function(data, dpto_nombre) {
+  data %>%
+    st_drop_geometry() %>%
+    summarise(
+      sum_22HOM = sum(sum_22HOM, na.rm = TRUE),
+      sum_23HOM = sum(sum_23HOM, na.rm = TRUE),
+      sum_24HOM = sum(sum_24HOM, na.rm = TRUE),
+      sum_22HP  = sum(sum_22HP,  na.rm = TRUE),
+      sum_23HP  = sum(sum_23HP,  na.rm = TRUE),
+      sum_24HP  = sum(sum_24HP,  na.rm = TRUE),
+      sum_22HR  = sum(sum_22HR,  na.rm = TRUE),
+      sum_23HR  = sum(sum_23HR,  na.rm = TRUE),
+      sum_24HR  = sum(sum_24HR,  na.rm = TRUE),
+      sum_22HC  = sum(sum_22HC,  na.rm = TRUE),
+      sum_23HC  = sum(sum_23HC,  na.rm = TRUE),
+      sum_24HC  = sum(sum_24HC,  na.rm = TRUE),
+      sum_22HA  = sum(sum_22HA,  na.rm = TRUE),
+      sum_23HA  = sum(sum_23HA,  na.rm = TRUE),
+      sum_24HA  = sum(sum_24HA,  na.rm = TRUE),
+      sum_22HM  = sum(sum_22HM,  na.rm = TRUE),
+      sum_23HM  = sum(sum_23HM,  na.rm = TRUE),
+      sum_24HM  = sum(sum_24HM,  na.rm = TRUE)
+    ) %>%
+    pivot_longer(cols = everything(), names_to = "delito_anio", values_to = "total") %>%
+    mutate(
+      Departamento = dpto_nombre,
+      Año = str_extract(delito_anio, "\\d{2}"),
+      Tipo = str_extract(delito_anio, "[A-Z]+$")
+    )
+}
+
+# Departamentos completos
+ant <- resumir_delitos(delitos_data_Antioquia, "Antioquia")
+cun <- resumir_delitos(delitos_data_Cundinamarca, "Cundinamarca")
+atl <- resumir_delitos(delitos_data_Atlantico, "Atlántico")
+
+# Capitales
+med <- resumir_delitos(Delitos_Medellin, "Medellin")
+bog <- resumir_delitos(Delitos_Bogota, "Bogota")
+baq <- resumir_delitos(Delitos_Barranquilla, "Barranquilla")
+
+# Departamentos sin capitales
+ant_no_med <- resumir_delitos(Delitos_Antioquia_NoCapital, "Antioquia sin capital")
+cun_no_bog <- resumir_delitos(Delitos_Cundinamarca_NoCapital, "Cundinamarca sin capital")
+atl_no_baq <- resumir_delitos(Delitos_Atlantico_NoCapital, "Atlántico sin capital")
+```
+
+
+
+Se crea un unico dataframe con la informacion resumida.
+
+
+
+```{r}
+# Unir todos
+delitos_summary_total <- bind_rows(
+  ant, cun, atl,             # Departamentos completos
+  med, bog, baq,             # Capitales
+  ant_no_med, cun_no_bog, atl_no_baq  # Departamentos sin capital
+) %>%
+  mutate(
+    Año = paste0("20", Año),  # Convertir 22 → 2022, etc.
+    Tipo = factor(Tipo, levels = c("HOM", "HP", "HR", "HC", "HA", "HM"))
+  ) %>%
+  filter(!is.na(Tipo))  # Filtrar posibles valores atípicos
+```
+
+
+
+Se crean los graficos, en este caso graficos de barras agrupando por tipo de delito los diferentes resultados, sea departamento, capital o los datgos del departamento sin capital.
+
+
+```{r}
+
+# Crear gráficos
+g_departamentos <- delitos_summary_total %>%
+  filter(Departamento %in% c("Antioquia", "Cundinamarca", "Atlántico")) %>%
+  ggplot(aes(x = Tipo, y = total, fill = Departamento)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~Año) +
+  labs(title = "Delitos por tipo y año - Departamentos completos",
+       x = "Tipo de delito", y = "Total reportado") +
+  theme_minimal() +
+  theme(strip.text = element_text(face = "bold"))
+print(g_departamentos)
+```
+
+
+
+El primer grafico nos muestra la evolucion del tipo de delitos por año para cada departamento.
+A primera vista se ve como Cundinamarca se muestra como el departamento con mayor cantidad de delitos cometidos, especialmente el Hurto a personas (HP), siendo el delito predominante por un gran margen, este comportamiento se repite para los departamentos de Antioquia y Atlantico.
+
+Se destaca como el Hurto a motocicletas (HM) es mayor en el departamento de antioquia, a pesar de tener una menor concentracion de vehiculos y poblacion.
+
+Tambien se nota como el departamento del atlantico se encuentra por debajo en varios niveles de magnitud, para hacer un analisis un poco mas detallado, se decide dividir los datos de delito por el numero de habitantes.
+
+
+```{r}
+poblacion <- tibble::tibble(
+  Departamento = c("Antioquia", "Cundinamarca", "Atlántico",
+                   "Medellin", "Bogota", "Barranquilla",
+                   "Antioquia sin capital", "Cundinamarca sin capital", "Atlántico sin capital"),
+  Poblacion = c(6.9e6, 12e6, 2.8e6,
+                2.5e6, 8.4e6, 1.3e6,
+                6.9e6 - 2.5e6, 12e6 - 8.4e6, 2.8e6 - 1.3e6)
+)
+delitos_summary_poblacion <- delitos_summary_total %>%
+  left_join(poblacion, by = "Departamento") %>%
+  mutate(
+    tasa_por_100k = (total / Poblacion) * 100000
+  )
+```
+
+```{r}
+g_departamentos_tasa <- delitos_summary_poblacion %>%
+  filter(Departamento %in% c("Antioquia", "Cundinamarca", "Atlántico")) %>%
+  ggplot(aes(x = Tipo, y = tasa_por_100k, fill = Departamento)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~Año) +
+  labs(title = "Tasa de delitos por 100.000 habitantes - Departamentos completos",
+       x = "Tipo de delito", y = "Tasa por 100.000 hab") +
+  theme_minimal() +
+  theme(strip.text = element_text(face = "bold"))
+
+print(g_departamentos_tasa)
+```
+
+
+
+Ahora se aprecian mas facil las diferencias, se ve como el departamento de Antioquia es el mas alto en Hurto de Motocicletas con un leve incremento año por año, como el departamento del Atlantico va en decrecimiento en el Hurto a personas. Se destaca el indicador de Hurto a Comercios, donde tanto Antioquia como Atlantico han sido capaces de reducirlo mientras en Cundinamarca permanece estable.
+En cuanto a Homicidios, notese como Atlantico tiene un mayor numero por cada 100.000 habitantes, a pesar de tener una cantidad de hurtos considerablemente menor.
+
+Finalmente, el hurto a residencias se ha mantenido estable para los 3 departamentos a lo largo de los años.
+
+Se decide continuar los analisis utilizando el metodo cada 100mil habitantes:
+
+
+
+```{r}
+g_capitales_tasa <- delitos_summary_poblacion %>%
+  filter(Departamento %in% c("Bogota", "Barranquilla", "Medellin")) %>%
+  ggplot(aes(x = Tipo, y = tasa_por_100k, fill = Departamento)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~Año) +
+  labs(title = "Tasa de delitos por 100.000 habitantes - Capitales",
+       x = "Tipo de delito", y = "Tasa por 100.000 hab") +
+  theme_minimal() +
+  theme(strip.text = element_text(face = "bold"))
+
+print(g_capitales_tasa)
+
+```
+
+
+El segundo grafico nos muestra los datos de delito por capitales, aqui se destaca como las diferencias que existen entre los departamentos de Atlantico y Antioquia no son tan notorias al momento de comparar las Capitales, donde el unico dato que muestra diferencia significativa es el Hurto a Motocicletas.
+
+
+
+```{r}
+g_sin_capitales_tasa <- delitos_summary_poblacion %>%
+  filter(Departamento %in% c("Antioquia sin capital", 
+                             "Cundinamarca sin capital", 
+                             "Atlántico sin capital")) %>%
+  ggplot(aes(x = Tipo, y = tasa_por_100k, fill = Departamento)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~Año) +
+  labs(title = "Tasa de delitos por 100.000 habitantes - Sin capital",
+       x = "Tipo de delito", y = "Tasa por 100.000 hab") +
+  theme_minimal() +
+  theme(strip.text = element_text(face = "bold"))
+
+print(g_sin_capitales_tasa)
+```
+
+
+El tercer grafico nos ayuda a identificar, inicialmente, que hay un problema con el conjunto de datos, donde no existe información para el departamento de Cundinamarca, existe unicamente para la ciudad de bogota, esto pudo deberse a un error de filtrado.
+Entre los departamentos de Antioquia y Atlantico se ven diferencias notorias y nos permite sacar nuestras primeras conclusiones.
+El primer caso notorio es como el Hurto a Motocicletas (MP) fue mayor en el departamento del Atlantico en los años 2022 y 2023, y similar en el 2024, por lo que este indicador en la comparación general de departamentos es fuertemente influenciado por la capital. Adicionalmente, el incremento que se ve año a año en el Hurto a Motocicletas no se puede atribuir unicamente a un incremento en la capital.
+otros indicadores como Hurto a Personas y Homicidios, el departamento de Antioquia muestra ser mas seguro que el departamento del Atlantico.
+Dadas las diferencias vistas también, se puede concluir que el Hurto a comercios y residencias en el departamento del atlantico se concentran mucho mas en la capital.
+
+Se decide hacer un ultimo grafico, comparando la tasa de delitos en la capital y el resto del departamento, se excluye Bogota para evitar el sesgo de no tener datos departamentales:
+
+
+```{r}
+delitos_summary_poblacion <- delitos_summary_poblacion %>%
+  mutate(Grupo = case_when(
+    Departamento %in% c("Medellin", "Bogota", "Barranquilla") ~ "Capital",
+    Departamento %in% c("Antioquia sin capital", "Cundinamarca sin capital", "Atlántico sin capital") ~ "No capital",
+    TRUE ~ NA_character_
+  ))
+g_cap_vs_nocap_tasa_final <- delitos_summary_poblacion %>%
+  filter(!is.na(Grupo)) %>%
+  filter(Departamento %in% c(
+    "Medellin", "Barranquilla",
+    "Antioquia sin capital", "Atlántico sin capital"
+  )) %>%
+  ggplot(aes(x = Tipo, y = tasa_por_100k, fill = Grupo)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~Año) +
+  labs(title = "Tasa de delitos por 100.000 hab - Capital vs No capital (Medellín y Barranquilla)",
+       x = "Tipo de delito", y = "Tasa por 100.000 hab") +
+  theme_minimal() +
+  theme(strip.text = element_text(face = "bold"))
+
+print(g_cap_vs_nocap_tasa_final)
+```
+
+
+Este gráfico solo refuerza lo que se entiende, las capitales son mas inseguras que los municipios aledaños en los departamentos, se destaca únicamente como el indicador de homicidios no sigue esta tendencia.
+
+###Metodologia para posteriores analisis.
+Dado el análisis anterior, donde es notable la influencia de la capital en los indicadores generales del departamento, el analista considera importante hacer esta distinción antes de poder sacar conclusiones mas elaboradas, por lo cual se hará la comparación de los datos por capital y departamento de manera independiente.
+Por preferencia del Analista, se escoge el departamento del Atlántico y la Capital de Barranquilla para hacer un análisis mas detallado.
+
+Se inicia haciendo un analisis estadistico basico:
+
+
+```{r}
+# Selección de variables por tipo de delito y año
+delitos_vars <- c("sum_22HOM", "sum_23HOM", "sum_24HOM",
+                  "sum_22HP",  "sum_23HP",  "sum_24HP",
+                  "sum_22HR",  "sum_23HR",  "sum_24HR",
+                  "sum_22HC",  "sum_23HC",  "sum_24HC",
+                  "sum_22HA",  "sum_23HA",  "sum_24HA",
+                  "sum_22HM",  "sum_23HM",  "sum_24HM")
+
+# Subset por dataset
+baq <- Delitos_Barranquilla %>%
+  st_drop_geometry() %>%
+  select(mpio_ccdgo, all_of(delitos_vars))
+
+atlnc <- Delitos_Atlantico_NoCapital %>%
+  st_drop_geometry() %>%
+  select(mpio_ccdgo, all_of(delitos_vars))
+```
+
+
+Se calculan las metricas, para el caso de la covarianza, en ves de analizar influencia entre variables, se decide analizar la influencia entre los distintos años, esto representa el promedio de la relación conjunta entre los valores de un mismo tipo de delito reportados en diferentes años (2022, 2023 y 2024) para una misma unidad geográfica (manzana o municipio). Es decir, indica en qué medida las manzanas o municipios que tuvieron altos niveles de un delito en un año también tendieron a mantener niveles similares en los años siguientes. Una covarianza alta y positiva sugiere que los delitos se concentraron de forma persistente en los mismos lugares a lo largo del tiempo, mientras que una covarianza baja indica que los patrones de criminalidad fueron más variables o dispersos entre años.
+
+Este indicador nos permite inferir la estabilidad temporal espacial del delito: por ejemplo, en Barranquilla la alta covarianza en el hurto a personas podra sugerir que ciertas manzanas presentan un comportamiento delictivo repetitivo, mientras que en Atlántico  la menor covarianza en algunos delitos reflejaria una distribución menos constante entre municipios año a año.
+
+
+```{r}
+# Función para calcular métricas
+calcular_estadisticas <- function(df, tipo) {
+  cols <- grep(paste0(tipo), names(df), value = TRUE)
+
+  datos <- df[, cols]
+
+  tibble(
+    Tipo = tipo,
+    Skewness = mean(apply(datos, 2, skewness, na.rm = TRUE)),
+    Kurtosis = mean(apply(datos, 2, kurtosis, na.rm = TRUE)),
+    Varianza = mean(apply(datos, 2, var, na.rm = TRUE)),
+    Covarianza = mean(stats::cov(datos, use = "pairwise.complete.obs")[lower.tri(cov(datos))])
+  )
+}
+
+# Aplicar a cada tipo y dataset
+tipos <- c("HOM", "HP", "HR", "HC", "HA", "HM")
+
+stats_baq_manzana <- bind_rows(lapply(tipos, \(t) calcular_estadisticas(baq, t))) %>%
+  mutate(Grupo = "Barranquilla")
+
+stats_atlnc_manzana <- bind_rows(lapply(tipos, \(t) calcular_estadisticas(atlnc, t))) %>%
+  mutate(Grupo = "Atlántico sin capital")
+
+# Unir para comparar
+stats_manzana_total <- bind_rows(stats_baq_manzana, stats_atlnc_manzana)
+```
+
+```{r,warning=FALSE}
+# Sumar por municipio
+baq_mpio <- baq %>%
+  group_by(mpio_ccdgo) %>%
+  summarise(across(all_of(delitos_vars), sum, na.rm = TRUE))
+
+atlnc_mpio <- atlnc %>%
+  group_by(mpio_ccdgo) %>%
+  summarise(across(all_of(delitos_vars), sum, na.rm = TRUE))
+
+# Calcular estadísticas
+stats_baq_mpio <- bind_rows(lapply(tipos, \(t) calcular_estadisticas(baq_mpio, t))) %>%
+  mutate(Grupo = "Barranquilla")
+
+stats_atlnc_mpio <- bind_rows(lapply(tipos, \(t) calcular_estadisticas(atlnc_mpio, t))) %>%
+  mutate(Grupo = "Atlántico sin capital")
+
+# Unir para comparar
+stats_mpio_total <- bind_rows(stats_baq_mpio, stats_atlnc_mpio)
+```
+
+
+Se crean dos tablas, la primera corresponde a los datos estadisticos agrupados por manzana, comparando los resultados para Barranquilla y el Departamento del Atlantico.
+
+
+```{r}
+stats_manzana_total %>%
+  arrange(Tipo, Grupo) %>%
+  kable(caption = "Estadísticas por tipo de delito a nivel de manzana")
+```
+
+
+
+### Hurto a Automotores
+Tanto a nivel departamental como en la capital hay una alta Asimetria y Curtosis, destacando como para el departamento del atlantico es extremadamente alta con un valor de 1811. Sin embargo la varianza general es baja para ambos. 
+
+Esto se puede interpretar como una alta concentración de hurto a Vehículos en un bajo numero de manzanas, con la diferencia siendo mas extrema en el departamento del atlantico.
+
+### Hurto a Comercio
+Atlántico muestra nuevamente mayor skewness (14.3 vs 8.4), pero mayor varianza en Barranquilla (0.088 vs 0.023).
+
+La covarianza en Barranquilla es muy superior (0.017 vs 0.004), lo que indica que los años están más correlacionados: donde hubo hurtos en un año, también los hubo en otros.
+
+### Hurto a Motocicletas
+Atlántico presenta valores exageradamente altos de skewness (39.9) y kurtosis (3781), indicando que casi todas las manzanas tienen cero o muy pocos delitos, pero unas pocas tienen muchísimos. En Barranquilla, aunque también elevada, tiene skewness más moderada (21) y mejor varianza.
+Esto indica que fuera de la capital, existen focos muy puntuales donde hay hurto de motocicletas, una suposicion inicial podria indicar a parqueaderos o sitios con concentracion de personas.
+
+### Hurto a Personas
+Aqui es clara la diferencia, Barranquilla tiene una kurtosis más baja (93 vs 1697) pero una varianza muy superior (1.51 vs 0.38). La covarianza en Barranquilla es tambien es elevada (0.61), lo que indica persistencia anual en las zonas con hurtos.
+La interpretacion inicial es que en Barranquilla el hurto a personas está más extendido pero más constante. En Atlántico, es más raro pero muy concentrado.
+
+### Hurto a Residencias
+Ambas regiones tienen skewness elevada (> 6), pero Atlántico tiene kurtosis y varianza mucho más altas, con mejor correlación anual.
+
+El hurto a residencias parece ser más consistente en los municipios que en la ciudad.
+
+### Homicidios
+Ambos tienen estadísticas bastante cercanas, aunque Atlántico sin capital tiene mayor skewness (13.3 vs 11.2) y más varianza. Barranquilla tiene muy baja varianza (0.0025), lo que indica distribución más uniforme entre las manzanas que reportan homicidios.
+
+Esto indica que los homicidios estan distribuidos mas uniformemente en el departamento, aunque la uniformidad es mayor en la ciudad.
+
+## Verificacion Visual
+Se hace un pequeño mapa mostrando las manzanas que sufrieron hurto a vehiculos o motos los ultiumos 3 años, se dividen en 2 tipos, con aquellas mayores a 5 hurtos siendo consideradas con un nivel "Alto".
+
+
+```{r,warning=FALSE}
+Delitos_Barranquilla <- Delitos_Barranquilla %>%
+  mutate(
+    total_hurto_vehiculos = rowSums(across(c(sum_22HA, sum_23HA, sum_24HA,
+                                              sum_22HM, sum_23HM, sum_24HM)), na.rm = TRUE),
+    hurto_categoria = case_when(
+      total_hurto_vehiculos > 5 ~ "Alto",
+      total_hurto_vehiculos > 0  ~ "Medio",
+      TRUE                       ~ "Nulo"
+    )
+  )
+pal_hurto_simple <- colorFactor(
+  palette = c("Alto" = "red", "Medio" = "orange", "Nulo" = "transparent"),
+  domain = c("Nulo", "Medio", "Alto")
+)
+leaflet(Delitos_Barranquilla %>% filter(hurto_categoria != "Nulo")) %>%
+  addTiles() %>%
+  addPolygons(
+    fillColor = ~pal_hurto_simple(hurto_categoria),
+    color = "black",
+    weight = 1,
+    opacity = 0.5,
+    fillOpacity = 0.8,
+    popup = ~paste0(
+      "<b>Total hurtos de vehículos:</b> ", total_hurto_vehiculos, "<br>",
+      "<b>Categoría:</b> ", hurto_categoria
+    )
+  ) %>%
+  addLegend(
+    pal = pal_hurto_simple,
+    values = ~hurto_categoria,
+    title = "Hurto de vehículos",
+    position = "bottomright"
+  )
+```
+
+
+Se ve claramente como del grueso de manzanas de la ciudad, la gran mayoría no presentaron hurto a vehiculos en el periodo de 3 años analizado, dentro  de las que presentaron, nuevamente la gran mayoría presentaron menos de 5 hurtos, siendo fácilmente identificable el bajo numero de manzanas que presentaron hurtos mas de 5 hurtos en los últimos 3 años, se destaca como una única manzana que presento 50 hurtos y solo otras dos manzanas presentaron mas de 10 hurtos.
+
+Este mapa nos ayuda a corroborar nuestra interpretación inicial donde una alta asimetria y curtosis son indicio de una concentración elevada de hurtos en pocas manzanas.
+
+
+Se hace otra comparación, en este caso agrupando por código de municipios, principalmente para ver como se ven afectados nuestros indicadores al reducir la granularidad.
+
+
+```{r}
+tabla_comparativa_final <- bind_rows(
+  stats_baq_manzana,
+  stats_atlnc_mpio
+)
+
+# Mostrar tabla
+tabla_comparativa_final %>%
+  arrange(Tipo, Grupo) %>%
+  kable(caption = "Comparación: Barranquilla (nivel manzana) vs Atlántico sin capital (nivel municipio)")
+```
+
+
+Al comparar los indicadores estadísticos de los delitos entre Barranquilla (a nivel de manzana) y los municipios de Atlántico sin la capital (agrupados por municipio), se evidencia que la agregación territorial reduce considerablemente la asimetría (skewness) y la concentración extrema de valores (kurtosis) en la mayoría de los delitos. Esto indica que los valores atípicos —manzanas con niveles de delito muy altos— pierden influencia al analizar datos a escala municipal. A su vez, la varianza y la covarianza aumentan notablemente al agrupar, reflejando una mayor dispersión entre municipios y una consistencia temporal más clara entre los años en aquellos donde sí se reportan delitos.
+
+En conjunto, estos cambios sugieren que el análisis a nivel de manzana captura mejor la concentración puntual de la criminalidad en zonas específicas, mientras que el análisis por municipio permite observar tendencias estructurales y regionales más amplias. Esta diferencia de escala es crucial para la toma de decisiones: los operativos policiales podrían beneficiarse de la granularidad del análisis por manzana, mientras que los planes de prevención y asignación de recursos a largo plazo se justifican mejor a partir de las dinámicas detectadas entre municipios.
+
+
+Se decide hacer una segunda visualizacion para ver el cambio año a año en la delincuencia:
+
+
+```{r}
+calcular_totales_por_anio <- function(data) {
+  data %>%
+    mutate(
+      total_2022 = rowSums(select(st_drop_geometry(.),
+                                  sum_22HOM, sum_22HP, sum_22HR, sum_22HC, sum_22HA, sum_22HM), na.rm = TRUE),
+      total_2023 = rowSums(select(st_drop_geometry(.),
+                                  sum_23HOM, sum_23HP, sum_23HR, sum_23HC, sum_23HA, sum_23HM), na.rm = TRUE),
+      total_2024 = rowSums(select(st_drop_geometry(.),
+                                  sum_24HOM, sum_24HP, sum_24HR, sum_24HC, sum_24HA, sum_24HM), na.rm = TRUE)
+    )
+}
+clasificar_categoria_por_anio <- function(data) {
+  data %>%
+    mutate(
+      categoria_2022 = case_when(
+        total_2022 == 0 ~ "Zona segura",
+        total_2022 <= 5 ~ "Baja delincuencia",
+        total_2022 <= 9 ~ "Media delincuencia",
+        total_2022 >= 10 ~ "Alta delincuencia"
+      ),
+      categoria_2023 = case_when(
+        total_2023 == 0 ~ "Zona segura",
+        total_2023 <= 5 ~ "Baja delincuencia",
+        total_2023 <= 9 ~ "Media delincuencia",
+        total_2023 >= 10 ~ "Alta delincuencia"
+      ),
+      categoria_2024 = case_when(
+        total_2024 == 0 ~ "Zona segura",
+        total_2024 <= 5 ~ "Baja delincuencia",
+        total_2024 <= 9 ~ "Media delincuencia",
+        total_2024 >= 10 ~ "Alta delincuencia"
+      ),
+      # Asegurar orden consistente en los mapas
+      categoria_2022 = factor(categoria_2022, levels = c("Zona segura", "Baja delincuencia", "Media delincuencia", "Alta delincuencia")),
+      categoria_2023 = factor(categoria_2023, levels = c("Zona segura", "Baja delincuencia", "Media delincuencia", "Alta delincuencia")),
+      categoria_2024 = factor(categoria_2024, levels = c("Zona segura", "Baja delincuencia", "Media delincuencia", "Alta delincuencia"))
+    )
+}
+```
+
+```{r}
+Delitos_Barranquilla <- Delitos_Barranquilla %>%
+  calcular_totales_por_anio() %>%
+  clasificar_categoria_por_anio()
+
+
+delitos_data_Atlantico <- delitos_data_Atlantico %>%
+  calcular_totales_por_anio() %>%
+  clasificar_categoria_por_anio()
+
+
+Delitos_Atlantico_NoCapital <- Delitos_Atlantico_NoCapital %>%
+  calcular_totales_por_anio() %>%
+  clasificar_categoria_por_anio()
+Delitos_ZonaMetBaq <- Delitos_ZonaMetBaq %>%
+  calcular_totales_por_anio() %>%
+  clasificar_categoria_por_anio()
+
+```
+
+```{r}
+comparar_cambio_total <- function(data, total_anio1, total_anio2, nueva_col) {
+  data %>%
+    mutate(
+      !!nueva_col := case_when(
+        .[[total_anio2]] > .[[total_anio1]] ~ "Aumento",
+        .[[total_anio2]] < .[[total_anio1]] ~ "Disminucion",
+        TRUE ~ "Igual"
+      )
+    )
+}
+# Comparación 2022 vs 2023
+Delitos_Barranquilla <- comparar_cambio_total(Delitos_Barranquilla, "total_2022", "total_2023", "cambio_total_22_23")
+
+# Comparación 2023 vs 2024
+Delitos_Barranquilla <- comparar_cambio_total(Delitos_Barranquilla, "total_2023", "total_2024", "cambio_total_23_24")
+```
+
+```{r, warning=FALSE}
+library(htmltools)
+pal_cambio <- colorFactor(
+  palette = c("Aumento" = "red", "Disminucion" = "green"),
+  domain = c("Aumento", "Disminucion")
+)
+# Mapa 1: Cambio 2022 → 2023
+map_22_23 <- leaflet(Delitos_Barranquilla %>% filter(cambio_total_22_23 %in% c("Aumento", "Disminucion"))) %>%
+  addTiles() %>%
+  addPolygons(
+    fillColor = ~pal_cambio(cambio_total_22_23),
+    color = "black",
+    weight = 1,
+    fillOpacity = 0.8,
+    popup = ~paste0(
+      "<b>Cambio 2022→2023:</b> ", cambio_total_22_23, "<br>",
+      "<b>Total 2022:</b> ", total_2022, "<br>",
+      "<b>Total 2023:</b> ", total_2023
+    )
+  ) %>%
+  addLegend(
+    pal = pal_cambio,
+    values = ~cambio_total_22_23,
+    title = "Cambio 2022→2023",
+    position = "bottomright"
+  )
+
+# Mapa 2: Cambio 2023 → 2024
+map_23_24 <- leaflet(Delitos_Barranquilla %>% filter(cambio_total_23_24 %in% c("Aumento", "Disminucion"))) %>%
+  addTiles() %>%
+  addPolygons(
+    fillColor = ~pal_cambio(cambio_total_23_24),
+    color = "black",
+    weight = 1,
+    fillOpacity = 0.8,
+    popup = ~paste0(
+      "<b>Cambio 2023→2024:</b> ", cambio_total_23_24, "<br>",
+      "<b>Total 2023:</b> ", total_2023, "<br>",
+      "<b>Total 2024:</b> ", total_2024
+    )
+  ) %>%
+  addLegend(
+    pal = pal_cambio,
+    values = ~cambio_total_23_24,
+    title = "Cambio 2023→2024",
+    position = "bottomright"
+  )
+```
+
+```{r}
+tagList(
+  tags$div(style = "display: flex;",
+           tags$div(style = "width: 50%; padding-right: 5px;", map_22_23),
+           tags$div(style = "width: 50%; padding-left: 5px;", map_23_24)
+  )
+)
+```
+
+
+
+Detallando el mapa se puede ver como hay varias manzanas las cuales no presentan cambios en la delincuencia, dentro de las que presentan cambios, la mayoria disminuyen o aumentan en un delito unicamente. A su vez se resalta como las manzanas de mayor tamaño son aquellas que mas se encuentran presente en ambos graficos, demostrando nuevamente como la granularidad afecta los indices estadisticos.
+De forma general, esto corrobora nuestros valores de covarianza, donde los cambios entre años no son grandes, mostrando cierto comportamiento repetitivo en las zonas donde ocurren estos delitos.
+
+## Variables Redundantes.
+Se realiza el ejecicio academico para la identificacion de variables redundantes.
+
+
+```{r}
+baq_data <- Delitos_Barranquilla %>%
+  st_drop_geometry() %>%
+  select(all_of(delitos_vars)) %>%
+  filter(if_all(everything(), ~ !is.na(.)))
+
+# Departamento sin capital
+atlnc_data <- Delitos_Atlantico_NoCapital %>%
+  st_drop_geometry() %>%
+  select(all_of(delitos_vars)) %>%
+  filter(if_all(everything(), ~ !is.na(.)))
+```
+
+```{r}
+# Modelo en Barranquilla
+modelo_baq <- lm(sum_24HP ~ ., data = baq_data)
+
+# Modelo en Atlántico sin capital
+modelo_atlnc <- lm(sum_24HP ~ ., data = atlnc_data)
+```
+
+```{r}
+vif_baq <- vif(modelo_baq)
+
+vif_atlnc <- vif(modelo_atlnc)
+```
+
+```{r}
+tibble::tibble(
+  Variable = names(vif_baq),
+  VIF = round(vif_baq, 2)
+) %>%
+  arrange(desc(VIF)) %>%
+  kable(caption = "VIF - Barranquilla")
+```
+
+```{r}
+tibble::tibble(
+  Variable = names(vif_atlnc),
+  VIF = round(vif_atlnc, 2)
+) %>%
+  arrange(desc(VIF)) %>%
+  kable(caption = "VIF - Atlántico sin capital (nivel manzana)")
+```
+
+
+El análisis de colinealidad mediante el Factor de Inflación de la Varianza (VIF) revela que tanto en Barranquilla como en los municipios del Atlántico, las variables utilizadas en los modelos de regresión presentan valores bajos y aceptables. En ambos casos, todos los VIF se encuentran por debajo de 2, lo cual indica que no hay multicolinealidad significativa entre las variables predictoras. Aunque algunos delitos como el hurto a personas (HP) y el hurto a motocicletas (HM) muestran cierta relación entre años consecutivos, esto es esperable dada la persistencia espacial de ciertas dinámicas delictivas.
+
+En general, esto significa que las variables incluidas en el modelo aportan información complementaria, sin redundancias importantes que justifiquen su eliminación. La estabilidad de los VIF sugiere que los modelos pueden mantenerse con la estructura actual sin afectar la interpretación o precisión por efectos de colinealidad. No obstante, si el objetivo fuese reducir la dimensionalidad para modelos predictivos más compactos, podrían evaluarse estrategias como la combinación de años o el uso de componentes principales, aunque desde el punto de vista explicativo, no es necesario.
+
+## Analisis exploratorio de datos espaciales (ESDA) en Barranquilla
+
+Iniciaremos con una vista general del delito de Hurto a Personas en Barranquilla, esto debido a que en análisis anteriores era el delito que mas prevalece.
+
+
+
+```{r,fig.width=12, fig.height=12,warning=FALSE}
+# Crear centroides
+centros_baq <- st_centroid(Delitos_Barranquilla)
+
+# Variable: total hurto a personas 2024
+centros_baq <- centros_baq %>%
+  mutate(total_HP = rowSums(across(c(sum_22HP, sum_23HP, sum_24HP)), na.rm = TRUE))
+ggplot(data = centros_baq) +
+  geom_sf(data = st_union(Delitos_Barranquilla), fill = NA, color = "grey60") +
+  stat_density_2d(
+    aes(x = st_coordinates(centros_baq)[,1],
+        y = st_coordinates(centros_baq)[,2],
+        fill = ..level..,
+        alpha = ..level..),
+    geom = "polygon",
+    bins = 8
+  ) +
+  scale_fill_gradient(low = "yellow", high = "red") +
+  scale_alpha(range = c(0.2, 0.8)) +
+  labs(title = "Mapa de calor: Hurto a personas (Barranquilla)") +
+  theme_minimal()
+```
+
+
+Notese como el punto caliente para hurto a personas se encuentra ubicado en la zona sur, aledaño al municipio de soledad.
+
+Se decide expandir el analisis inicial para incluir las zonas correspondientes al area metropolitana de barranquilla.
+
+
+```{r,fig.width=12, fig.height=12,warning=FALSE}
+centros_zmb <- Delitos_ZonaMetBaq %>%
+  st_centroid() %>%
+  mutate(total_HP = rowSums(across(c(sum_22HP, sum_23HP, sum_24HP)), na.rm = TRUE))
+ggplot(data = centros_zmb) +
+  geom_sf(data = st_union(Delitos_ZonaMetBaq), fill = NA, color = "grey60") +
+  stat_density_2d(
+    aes(x = st_coordinates(centros_zmb)[,1],
+        y = st_coordinates(centros_zmb)[,2],
+        fill = ..level..,
+        alpha = ..level..),
+    geom = "polygon",
+    bins = 8
+  ) +
+  scale_fill_gradient(low = "yellow", high = "red") +
+  scale_alpha(range = c(0.2, 0.8)) +
+  labs(title = "Mapa de calor: Hurto a personas (Zona Metropolitana Baq)") +
+  theme_minimal()
+```
+
+
+La comparación entre el mapa exclusivo de Barranquilla y el de la Zona Metropolitana de Barranquilla (ZMB) evidencia cómo la incorporación de municipios vecinos amplía el espectro espacial de la delincuencia. Si bien el foco principal de concentración de hurtos a personas se mantiene en la zona suroriental de la ciudad (posiblemente barrios como Rebolo o San Roque), al incluir la ZMB aparecen nuevas concentraciones delictivas en municipios colindantes, especialmente al sur (como Soledad) y algunas áreas dispersas al noroeste. Esto sugiere que la criminalidad no está estrictamente contenida dentro de los límites urbanos de la capital, sino que también se proyecta hacia las periferias, probablemente siguiendo dinámicas de conurbación, movilidad y densidad poblacional.
+
+Este hallazgo enfatiza que el análisis limitado a Barranquilla podría subestimar o desdibujar ciertas zonas de riesgo, especialmente aquellas cercanas a las fronteras municipales. El análisis a la zona metropolitana aporta información valiosa para una planeación más regional, permitiendo diseñar estrategias preventivas más amplias y coordinadas entre municipios.
+
+A continuacion se hace otro mapa incluyendo todos los delitos relevantes para el analisis, en este caso uno para Barranquilla y otro incluyendo su zona metropolitana. El objetivo de esto es ver si hay prevalencia de otros delitos que modifiquen el mapa de calor generado por el delito predominante, o este sigue siendo el principal.
+
+
+```{r,warning=FALSE}
+centros_baq <- Delitos_Barranquilla %>%
+  st_centroid() %>%
+  mutate(
+    total_delitos = rowSums(across(starts_with("sum_")), na.rm = TRUE)
+  ) %>%
+  filter(total_delitos > 0)
+
+# Para Zona Metropolitana de Barranquilla
+centros_zmb <- Delitos_ZonaMetBaq %>%
+  st_centroid() %>%
+  mutate(
+    total_delitos = rowSums(across(starts_with("sum_")), na.rm = TRUE)
+  ) %>%
+  filter(total_delitos > 0)
+```
+
+```{r}
+p1=ggplot(data = centros_baq) +
+  geom_sf(data = st_union(Delitos_Barranquilla), fill = NA, color = "grey60") +
+  stat_density_2d(
+    aes(x = st_coordinates(centros_baq)[,1],
+        y = st_coordinates(centros_baq)[,2],
+        fill = ..level..,
+        alpha = ..level..),
+    geom = "polygon",
+    bins = 8
+  ) +
+  scale_fill_gradient(low = "yellow", high = "red") +
+  scale_alpha(range = c(0.2, 0.8)) +
+  labs(title = "Barranquilla") +
+  theme_minimal()
+```
+
+```{r}
+p2=ggplot(data = centros_zmb) +
+  geom_sf(data = st_union(Delitos_ZonaMetBaq), fill = NA, color = "grey60") +
+  stat_density_2d(
+    aes(x = st_coordinates(centros_zmb)[,1],
+        y = st_coordinates(centros_zmb)[,2],
+        fill = ..level..,
+        alpha = ..level..),
+    geom = "polygon",
+    bins = 8
+  ) +
+  scale_fill_gradient(low = "yellow", high = "red") +
+  scale_alpha(range = c(0.2, 0.8)) +
+  labs(title = "Zona Metropolitana") +
+  theme_minimal()
+```
+
+```{r,fig.width=12, fig.height=12}
+p1
+```
+
+```{r,fig.width=12, fig.height=12}
+p2
+```
+
+
+Al comparar el mapa de calor basado únicamente en hurto a personas con aquel que considera la suma total de todos los delitos (HP, HA, HM, HR, HC, HOM), se observa que la estructura espacial del calor se conserva en gran medida. Esto implica que el hurto a personas, por su volumen y distribución, es un buen indicador proxy del comportamiento delictivo general en la ciudad. La forma, ubicación y densidad de los focos principales apenas se modifica, aunque se intensifican algunas zonas en los mapas globales, sugiriendo que ciertos sectores concentran múltiples formas de crimen.
+
+Esto tiene dos implicaciones importantes: por un lado, las zonas críticas ya identificadas para Hurto a Personas también deben ser prioridad para otros delitos; por otro, se reafirma que una política focalizada geográficamente puede tener impacto transversal. Sin embargo, también se abren oportunidades para estudios más específicos de coincidencia espacial entre delitos, por ejemplo, si los hurtos a vehículos y a personas tienden a ocurrir en las mismas zonas o no.
+
+## Local Moran's
+
+Se realiza otro analisis de agrupacion basado en Local Moran's, para determinar si la agrupacion de crimenes sigue alguna regla espacial o es estadisticamentes significativa:
+
+
+
+```{r, warning=FALSE}
+Delitos_Barranquilla <- Delitos_Barranquilla %>%
+  mutate(total_delitos = rowSums(across(starts_with("sum_")), na.rm = TRUE))
+# Convertir a geometría centrada (puntos o polígonos)
+coords <- st_centroid(Delitos_Barranquilla) %>% st_coordinates()
+
+# Crear vecinos usando k-nearest neighbors
+nb <- knn2nb(knearneigh(coords, k = 6))
+
+# Lista de pesos espaciales
+lw <- nb2listw(nb, style = "W")
+x <- Delitos_Barranquilla$total_delitos
+
+# Calcular estadístico Local Moran
+local_moran <- localmoran(x, lw)
+
+# Añadir resultados al sf
+Delitos_Barranquilla <- Delitos_Barranquilla %>%
+  mutate(
+    Ii = local_moran[, 1],
+    p_value = local_moran[, 5],
+    cluster = case_when(
+      p_value > 0.05 ~ "No significativo",
+      Ii > 0 & x > mean(x, na.rm = TRUE) ~ "Alta-Alta",
+      Ii > 0 & x < mean(x, na.rm = TRUE) ~ "Baja-Baja",
+      Ii < 0 & x > mean(x, na.rm = TRUE) ~ "Alta-Baja",
+      Ii < 0 & x < mean(x, na.rm = TRUE) ~ "Baja-Alta",
+      TRUE ~ "Otro"
+    )
+  )
+Delitos_ZonaMetBaq <- Delitos_ZonaMetBaq %>%
+  mutate(total_delitos = rowSums(across(starts_with("sum_")), na.rm = TRUE))
+coords_zmb <- st_centroid(Delitos_ZonaMetBaq) %>% st_coordinates()
+
+# k-vecinos más cercanos
+nb_zmb <- knn2nb(knearneigh(coords_zmb, k = 6))
+
+# Lista de pesos espaciales
+lw_zmb <- nb2listw(nb_zmb, style = "W")
+x_zmb <- Delitos_ZonaMetBaq$total_delitos
+
+# Local Moran's I
+local_moran_zmb <- localmoran(x_zmb, lw_zmb)
+
+# Agregar al dataset
+Delitos_ZonaMetBaq <- Delitos_ZonaMetBaq %>%
+  mutate(
+    Ii = local_moran_zmb[, 1],
+    p_value = local_moran_zmb[, 5],
+    cluster = case_when(
+      p_value > 0.05 ~ "No significativo",
+      Ii > 0 & x_zmb > mean(x_zmb, na.rm = TRUE) ~ "Alta-Alta",
+      Ii > 0 & x_zmb < mean(x_zmb, na.rm = TRUE) ~ "Baja-Baja",
+      Ii < 0 & x_zmb > mean(x_zmb, na.rm = TRUE) ~ "Alta-Baja",
+      Ii < 0 & x_zmb < mean(x_zmb, na.rm = TRUE) ~ "Baja-Alta",
+      TRUE ~ "Otro"
+    )
+  )
+```
+
+```{r,fig.width=12, fig.height=12,warning=FALSE}
+tm_shape(Delitos_Barranquilla) +
+  tm_polygons("cluster",
+              palette = c("red", "blue", "lightblue", "orange", "grey80"),
+              title = "Cluster Local Moran",
+              border.col = "black") +
+  tm_layout(title = "Clústeres espaciales: total de delitos (Local Moran's I)",
+            frame=FALSE,
+            asp=0,
+            legend.outside = TRUE,
+            legend.text.size = 1.2,
+            legend.title.size = 1.2,
+            outer.margins = c(0, 0, 0, 0), # Eliminar márgenes vacíos
+            inner.margins = c(0.02, 0.02, 0.02, 0.02) )
+```
+
+
+El análisis espacial utilizando el estadístico Local Moran’s I aplicado a la ciudad de Barranquilla revela una concentración de clústeres delictivos tipo Alta–Alta (zonas con altos niveles de delitos rodeadas de otras igualmente críticas) en sectores densamente urbanizados del nororiente y centro-sur de la ciudad, como Rebolo, San Roque y partes de la Ciudadela 20 de Julio. Estas zonas ya habían sido identificadas previamente como focos activos de criminalidad, y su reafirmación mediante el análisis espacial valida su importancia estratégica para intervenciones específicas. En contraste, la mayoría del territorio urbano aparece como “No significativo”, lo cual es esperable dado que solo se resaltan patrones estadísticamente sólidos.
+
+
+
+```{r,fig.width=12, fig.height=12, warning=FALSE}
+tm_shape(Delitos_ZonaMetBaq) +
+  tm_polygons("cluster",
+              palette = c("red", "blue", "lightblue", "orange", "grey80"),
+              title = "Cluster Local Moran",
+              border.col = "black") +
+  tm_layout(title = "Clústeres espaciales: total de delitos (Zona Metropolitana)",
+            frame=FALSE,
+            asp=0,
+            legend.outside = TRUE,
+            legend.text.size = 1.2,
+            legend.title.size = 1.2,
+            outer.margins = c(0, 0, 0, 0), # Eliminar márgenes vacíos
+            inner.margins = c(0.02, 0.02, 0.02, 0.02) )
+```
+
+
+
+
+Al ampliar el análisis a la Zona Metropolitana de Barranquilla, se observa una clara expansión de los clústeres Alta–Alta hacia los municipios colindantes, especialmente Soledad y Puerto Colombia. Esta extensión pone en evidencia que el fenómeno delictivo no se limita a los límites de la capital, sino que también afecta regiones periféricas y suburbanas, muchas de las cuales presentan dinámicas urbanas similares. Además, se identifican nuevas zonas Baja–Alta, donde manzanas con baja incidencia delictiva están rodeadas de entornos más conflictivos, lo que puede indicar espacios vulnerables o en transición.
+
+
+Se destaca como existen diferencias entre la ubicacion de los puntos calientes en el mapa de calor y la creacion de clusteres utilizando Local Moran's, se decide crear un grafico superpuesto para ver estas diferencias de forma mas claras. El objetivo de este grafico es combinar dos herramientas analíticas para explorar la distribución espacial de los delitos en Barranquilla: el mapa de calor, representando densidad absoluta de delitos por ubicación, y el resultado del análisis de Local Moran’s I, que identifica clústeres estadísticamente significativos de criminalidad. El mapa de calor (en tonos de amarillo a rojo) muestra las zonas donde se acumulan más delitos, sin distinguir si esta acumulación es aleatoria o estructurada. En contraste, los contornos de color (rojo y azul) indican las manzanas donde existe una agrupación espacial significativa, es decir, donde el comportamiento delictivo no es producto del azar sino de una relación espacial coherente entre manzanas. El objetivo del gráfico es visualizar simultáneamente la intensidad delictiva y su patrón espacial, para detectar coincidencias y divergencias entre lo visualmente denso y lo estadísticamente relevante.
+
+
+
+
+
+```{r,fig.width=12, fig.height=12}
+ggplot() +
+  # Capa de densidad (heatmap)
+  stat_density_2d(
+    data = centros_baq,
+    aes(x = st_coordinates(centros_baq)[, 1],
+        y = st_coordinates(centros_baq)[, 2],
+        fill = ..level..,
+        alpha = ..level..),
+    geom = "polygon",
+    bins = 5
+  ) +
+  scale_fill_gradient(low = "yellow", high = "red", name = "Densidad delictiva") +
+  scale_alpha(range = c(0.3, 0.8), guide = "none") +
+
+  # Clústeres Local Moran usando bordes de color
+  geom_sf(data = Delitos_Barranquilla,
+          aes(color = cluster),
+          fill = NA,
+          size = 0.4) +
+  scale_color_manual(
+    values = c(
+      "Alta-Alta" = "red",
+      "Baja-Alta" = "blue",
+      "No significativo" = "lightblue",
+      "Missing" = "grey80"
+    ),
+    name = "Clúster Local Moran"
+  ) +
+
+  labs(title = "Superposición: Densidad delictiva + Clústeres Local Moran (Barranquilla)") +
+  theme_minimal()
+
+```
+
+
+El gráfico revela que, aunque existe una superposición parcial entre las zonas de mayor densidad delictiva y los clústeres significativos, no todas las áreas con muchos delitos forman patrones espaciales estables. Por ejemplo, el suroriente de la ciudad aparece como una de las zonas más densas en el mapa de calor, pero no muestra una cantidad proporcional de clústeres estadísticos, lo que sugiere una distribución más dispersa o variable. En cambio, el nororiente urbano, además de mostrar alta densidad, presenta numerosos clústeres Alta–Alta, confirmando su condición de núcleo crítico delictivo. Asimismo, la presencia de clústeres Baja–Alta en sectores periféricos sugiere zonas de riesgo latente, que podrían actuar como fronteras o transiciones entre áreas seguras y peligrosas. Esta comparación pone en evidencia que el mapa de calor y el análisis espacial se complementan: uno muestra la cantidad, y el otro, la estructura y consistencia espacial del fenómeno delictivo.
+
+## Moran Global
+
+Finalmente, se hace un analisis de los estadisticos de Moran Global para validar la relevancia estadistica de los resultados anteriores.
+
+
+```{r}
+moran_global <- moran.test(x, lw, randomisation = TRUE)
+print(moran_global)
+```
+
+
+El valor de Moran’s I = 0.15996 indica una autocorrelación espacial positiva: es decir, los delitos tienden a agrupares espacialmente, no están distribuidos al azar.
+El Z-score alto (28.475) y el p-value extremadamente bajo (< 0.00000000000000022) confirman que este agrupamiento es estadísticamente significativo.
+
+Las zonas con alto (o bajo) número de delitos están cerca de otras con valores similares, lo que sugiere la existencia de patrones espaciales consistentes en toda la ciudad.
+
+
+
+
+```{r}
+moran_mc <- moran.mc(x, listw = lw, nsim = 999)
+print(moran_mc)
+```
+
+
+El valor observado de Moran's I fue mayor que todos los valores simulados aleatoriamente, lo que le dio el rango más alto posible (1000/1000).
+El p-value de 0.001 indica que solo 1 de cada 1000 permutaciones aleatorias tuvo un valor tan extremo como el real.
+
+
+
+```{r}
+plot(moran_mc, main = "Prueba de Monte Carlo - Moran's I")
+
+```
+
+
+
+Los resultados del Moran’s I global y su validación mediante prueba de Monte Carlo confirman de manera robusta que los delitos en Barranquilla presentan un patrón de autocorrelación espacial significativa. Este hallazgo valida el uso de métodos espaciales como Local Moran para identificar focos delictivos, y sugiere que las intervenciones en seguridad pública deben ser diseñadas considerando la estructura espacial del crimen, no solo los conteos agregados.
+
+
+
+
