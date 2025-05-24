@@ -1,4 +1,4 @@
-# Appendix 4 {.appendix, .unnumbered}
+# Appendix 4
 
 ### Santiago Ortiz Pérez
 
@@ -21,7 +21,7 @@ delitos_data = delitos_data[delitos_data$dpto_ccdgo == '54', ]
 dim(delitos_data)
 ```
 
-The database show us 19754 entries on our department. Each row represent one "manzanas censales" defined by DANE as the smallest geographic units used for collecting and organizing census data in Colombia. A census block typically represents a city block or a small group of neighboring dwellings in an urban area, and is bounded by streets or other clearly defined physical features.
+The database show us 19754 entries on our department. Each row represent one "manzana censal" defined by DANE as the smallest geographic units used for collecting and organizing census data in Colombia. A census block typically represents a city block or a small group of neighboring dwellings in an urban area, and is bounded by streets or other clearly defined physical features.
 
 For this project, I have chosen to study terrorism, which is labeled as "TR" in the dataset. The data spans from 2022 to 2025 and provides valuable insights into the patterns and frequency of terrorist activity during this period. This type of crime is particularly significant in a specific region of the country that has been known to harbor terrorist groups attempting to gain control over the area. 
 
@@ -167,57 +167,6 @@ For terrorism crimes, a kurtosis above 1000 further confirms that the data is dr
 
 ## Coefficient of Variation
 
-```{r}
-#| echo: true
-#| message: false
-#| warning: false
-
-# Compute statistics
-mean_val <- mean(delitos_data$sum_22TR, na.rm = TRUE)
-print(mean_val)
-std_dev <- sd(delitos_data$sum_22TR, na.rm = TRUE)
-print(std_dev)
-
-# Compute the range for first standard deviation
-lower_bound <- mean_val - std_dev
-upper_bound <- mean_val + std_dev
-paste0('lower_bound: ', round(lower_bound, 2), ' - upper_bound: ', round(upper_bound, 2))
-
-# Count the number of points within 1 standard deviation
-within_1sd <- sum(delitos_data$sum_22TR >= lower_bound & delitos_data$sum_22TR <= upper_bound, na.rm = TRUE)
-percentage_1sd <- (within_1sd / nrow(delitos_data)) * 100
-paste0('within_1sd: ', round(within_1sd, 2), ' - percentage_1sd: ', round(percentage_1sd, 2))
-
-# Create histogram
-ggplot(delitos_data, aes(x = sum_22TR)) +
-  geom_histogram(binwidth = 5, fill = "blue", alpha = 0.5, color = "black") +
-  
-  # Add vertical lines for mean, median, and 1st SD
-  geom_vline(aes(xintercept = mean_val), color = "red", linetype = "dashed", size = 1.2) +
-  #geom_vline(aes(xintercept = median_val), color = "green", linetype = "dashed", size = 1.2) +
-  geom_vline(aes(xintercept = lower_bound), color = "purple", linetype = "dashed", size = 1) +
-  geom_vline(aes(xintercept = upper_bound), color = "purple", linetype = "dashed", size = 1) +
-  
-  # Labels and title
-  labs(title = "Histogram of DELITOS with Mean, and 1SD Range",
-       x = "AUTOMOTORES Values", y = "Frequency") +
-  
-  # Add annotation for 1SD range
-  annotate("text", x = mean_val, y = 10, 
-           label = paste(round(percentage_1sd, 1), "1SD", sep = ""), 
-           color = "black", size = 5, hjust = 0.5, vjust = -1) +
-  
-  theme_minimal()
-
-# cv
-paste0('cv: ', round(std_dev / mean_val * 100), 2)
-
-```
-
-The data is centered close to zero with most points tightly clustered around the mean (almost 100% within one standard deviation), which suggests low absolute variability. 
-
-However, because the mean is almost zero, the relative variability (CV) appears extremely high and isn’t very meaningful in this context.
-
 
 ```{r}
 # variation
@@ -246,34 +195,6 @@ Most crime types show low to moderate variation (CV between 5 and 18), meaning t
 Terrorism crimes have a high CV (24.66), confirming that terrorism incidents are clustered heavily in certain municipalities, rather than spread evenly.
 
 
-## Median Absolute Deviation MAD and MAD/median
-
-```{r}
-# Compute statistics
-median_val <- median(delitos_data$sum_22TR, na.rm = TRUE)
-print(median_val)
-mad_val <- mad(delitos_data$sum_22TR, na.rm = TRUE)  # Compute MAD
-print(mad_val)
-
-# Compute the range for first standard deviation
-lower_bound <- median_val - mad_val
-upper_bound <- median_val + mad_val
-paste0('lower_bound: ', round(lower_bound, 2), ' - upper_bound: ', round(upper_bound, 2))
-
-# Count the number of points within 1 MAD
-within_1mad <- sum(delitos_data$sum_22TR >= lower_bound & delitos_data$sum_22TR <= upper_bound, na.rm = TRUE)
-percentage_1mad <- (within_1mad / nrow(delitos_data)) * 100
-paste0('within_1mad: ', round(within_1mad, 2), ' - percentage_1mad: ', round(percentage_1mad, 2))
-
-# MAD/Median
-paste0('MAD/Median: ', round(mad_val / median_val * 100), 2)
-```
-
-
-Median Absolute Deviation (MAD) and the ratio MAD/median metrics are useful alternatives to standard deviation and coefficient of variation, especially when the data distribution is heavily skewed or contains outliers.
-
-However, because the crime data exhibits a strong accumulation of zeros the median values are always zero. This accumulation limits the usefulness of median-based measures like MAD and MAD/median, as they do not provide much discriminatory information about variability in this context.
-
 ## Covariance Matrix
 
 ```{r}
@@ -288,159 +209,8 @@ delitos_data %>%
   knitr::kable(digits = 2, caption = "Covariance Matrix")
 ```
 
-## Covariance Matrix of Log-Transformed Data
 
-```{r}
-#| echo: true
-#| message: false
-#| warning: false
-
-# Define the dataset
-x <- delitos_data$sum_22TR
-
-# 1. Compute Raw Arithmetic Mean
-arithmetic_mean <- mean(x)
-print(arithmetic_mean)
-
-# 2. Compute Log-Mean (Multiplicative Center)
-log_x <- log(x + 1)  # Take logarithm of values
-head(log_x)
-log_mean <- mean(log_x)  # Compute mean in log-space
-print(log_mean)
-log_mean_exp <- exp(log_mean)  # Convert back to original scale
-print(log_mean_exp)
-
-# Create the comparison table
-comparison_table <- data.frame(
-  Index = seq_along(x),  # Just an index for x-axis
-  Original_Value = x,
-  Log_Value = log_x
-)
-
-p1 <- ggplot(comparison_table, aes(x = Original_Value, y = Log_Value)) +
-  geom_line(color = "gray70", size = 0.7, alpha = 0.5) +  # Thin line connecting points
-  geom_point(alpha = 0.7, color = "blue") +  # Scatter points with transparency
-  labs(
-    title = "Scatter Plot: Original vs. Log-Transformed Values",
-    x = "Original Values",
-    y = "Log-Transformed Values"
-  ) +
-  theme_minimal()
-
-# Add marginal histogram
-ggMarginal(
-  p1,
-  type = "histogram",         # Add marginal histograms
-  bins = 40,                  # Number of bins for the histogram
-  margins = "both",           # Add histogram to both x and y margins
-  size = 5,                   # Size of the histograms relative to the scatter plot
-  fill = "gray",              # Fill color for the histogram
-  color = "black",            # Outline color for the histogram
-  alpha = 0.5                 # Transparency
-)
-```
-
-```{r}
-#| include: false
-# Store values for inline Quarto text
-log_values <- paste(round(head(comparison_table$Log_Value), 2), collapse = ", ")
-original_values <- paste(head(comparison_table$Original_Value), collapse = ", ")
-```
-
-Euler steps describe how many multiplicative steps of $( e )$ are needed to reach a given value.
-
-For example, in our dataset:
-
--   Original Values: `r original_values`\
--   Log Values: `r log_values`
-
-Each log-transformed value represents the number of times we need to multiply 1 by $( e )$ to reach the original value:
-
-$e^ \text{Log Values} = \text{Original Value}$
-
-```{r}
-#| echo: true
-#| message: false
-#| warning: false
-
-#log transformed data
-# Compute statistics for raw and log-transformed data
-mean_raw <- mean(delitos_data$sum_22TR, na.rm = TRUE)
-sd_raw <- sd(delitos_data$sum_22TR, na.rm = TRUE)
-mad_raw <- mad(delitos_data$sum_22TR, na.rm = TRUE)
-
-delitos_data_log <- delitos_data %>%
-  #mutate(LOG_AUTOMOTORES = log(AUTOMOTORES + 1))
-  mutate(LOG_AUTOMOTORES = log1p(sum_22TR))  # log1p(x) = log(1 + x) to handle zeros
-
-mean_log <- mean(delitos_data_log$LOG_AUTOMOTORES, na.rm = TRUE)
-sd_log <- sd(delitos_data_log$LOG_AUTOMOTORES, na.rm = TRUE)
-mad_log <- mad(delitos_data_log$LOG_AUTOMOTORES, na.rm = TRUE)
-
-# Compute statistics for raw and log-transformed data
-data.frame(
-  Measure = c("Mean", "Median", "Standard Deviation", "MAD"),
-  Raw_Data = c(mean(delitos_data$sum_22TR, na.rm = TRUE),
-               median(delitos_data$sum_22TR, na.rm = TRUE),
-               sd(delitos_data$sum_22TR, na.rm = TRUE),
-               mad(delitos_data$sum_22TR, na.rm = TRUE)),
-  Log_Transformed_Data = c(mean(delitos_data_log$LOG_AUTOMOTORES, na.rm = TRUE),
-                           median(delitos_data_log$LOG_AUTOMOTORES, na.rm = TRUE),
-                           sd(delitos_data_log$LOG_AUTOMOTORES, na.rm = TRUE),
-                           mad(delitos_data_log$LOG_AUTOMOTORES, na.rm = TRUE)))
-
-# Transform the data to a long format for ggplot
-delitos_long <- delitos_data %>%
-  st_drop_geometry() %>%
-  select(contains('22')) %>%
-  pivot_longer(cols = everything(), names_to = "Crime Type", values_to = "Value")
-
-# Create faceted histograms
-ggplot(delitos_long, aes(x = Value)) +
-  geom_histogram(bins = 30, fill = "skyblue", color = "black", alpha = 0.7) +
-  facet_wrap(~ `Crime Type`, scales = "free") +  # Facet by crime type
-  theme_minimal() +
-  labs(
-    title = "Distributions of Crime Data",
-    x = "Value",
-    y = "Frequency"
-  ) +
-  theme(
-    axis.text.x = element_text(size = 5)  # Reduce the font size of X-axis text
-  )
-
-# Transform the data to long format and apply log transformation
-delitos_long_log <- delitos_data %>%
-  st_drop_geometry() %>%
-  select(contains('22')) %>%
-  mutate(across(everything(), ~ log(.x), .names = "{col}")) %>%  # Log transform (log(x + 1) to avoid log(0))
-  pivot_longer(cols = everything(), names_to = "Crime Type", values_to = "Log Value")
-
-# Create faceted histograms for log-transformed values
-ggplot(delitos_long_log, aes(x = `Log Value`)) +
-  geom_histogram(bins = 30, fill = "skyblue", color = "black", alpha = 0.7) +
-  facet_wrap(~ `Crime Type`, scales = "free") +  # Facet by crime type
-  theme_minimal() +
-  labs(
-    title = "Log-Transformed Distributions of Crime Data",
-    x = "Log Value",
-    y = "Frequency"
-  ) +
-  theme(
-    axis.text.x = element_text(size = 3)  # Reduce the font size of X-axis text
-  )
-
-# Covariance Matrix (Log-Transformed)
-delitos_data %>%
-  st_drop_geometry() %>%
-  select(contains('22')) %>%
-  mutate(across(everything(), ~ log(.x+1))) %>%  # Log-transform (+1 to handle zeros)
-  cov() %>%
-  round(2) %>%
-  kable(digits = 2, caption = "Covariance Matrix (Log-Transformed)")
-```
-
-We computed both the covariance matrix and the log-transformed covariance matrix to explore the relationships among different crime types. In both analyses, the covariances between TR and the rest of the crime variables were consistently at or near zero, indicating no significant linear correlation with other types of crimes in the dataset.
+The covariances between TR and the rest of the crime variables were consistently at or near zero, indicating no significant linear correlation with other types of crimes in the dataset.
 
 This result reflects the nature of terrorism in Norte de Santander, where armed groups frequently target physical infrastructure such as oil pipelines, electrical towers, bridges, and military checkpoints. These acts often take place in intermunicipal roads or remote rural areas, far from populated zones. As such, they differ in location and motivation from crimes like theft, sexual assault, kidnapping, homicide, and domestic violence, which are typically reported in residential neighborhoods.
 
@@ -537,35 +307,6 @@ summary(model)
 ```
 
 The linear regression results indicate that the coefficients for sum_22HM, sum_22LP, sum_22VI, sum_22HC, and sum_22HOM are statistically significant predictors of sum_22TR. This suggests that these variables have a meaningful relationship with terrorism incidents in the dataset.
-
-### Variance Inflation Factors (VIF)
-
-To confirm, we fit a regression model where one variable $y$ is explained by others:
-
-$y = \beta_1 x_1 + \beta_2 x_2 + \dots + \beta_p x_p + \epsilon$
-
-To quantify redundancy, we compute Variance Inflation Factors (VIFs) for each predictor $x_j$:
-
-$VIF_j = \frac{1}{1 - R_j^2}$
-
-where $R_j^2$ is the $R^2$ value from regressing $x_j$ on all other predictors.
-
--   $VIF_j = 1$ → No multicollinearity.\
--   $VIF_j > 5$ → Moderate multicollinearity.\
--   $VIF_j > 10$ → Severe multicollinearity, indicating redundancy.
-
-A high VIF suggests that $x_j$ contributes little independent information and may be removed to improve model stability.
-
-```{r}
-#| echo: true
-#| message: false
-#| warning: false
-#| 
-# Variance Inflation Factors
-vif(model)
-```
-
-The Variance Inflation Factors (VIFs) for all predictors are low, ranging between 1 and 1.4, indicating minimal multicollinearity among the independent variables. This strengthens confidence in the stability and interpretability of the estimated coefficients.
 
 ## Global Variability Metric
 
@@ -693,27 +434,6 @@ Correlation measures the strength and direction of association between two varia
 
 ## Spearman's Rank Correlation
 
-Spearman's correlation coefficient $\rho$ is based on \emph{ranked} data. For two variables $X$ and $Y$, we replace each observation by its rank.
-
-$\rho = 1 - \frac{6 \sum d^2}{n(n^2 - 1)}$
-
-to compute Spearman's correlation coefficient $\rho$. This measure is based on ranked data. For two variables $X$ and $Y$, we first replace each observation by its rank. Once the data are ranked, Spearman's $\rho$ is computed similarly to Pearson's correlation, but using the ranks instead of the raw values:
-
-$\rho = \frac{\sum_{i=1}^{n}(r_{X_i} - \bar{r}_{X})(r_{Y_i} - \bar{r}_{Y})}{\sqrt{\sum_{i=1}^{n}(r_{X_i} - \bar{r}_{X})^2}\sqrt{\sum_{i=1}^{n}(r_{Y_i} - \bar{r}_{Y})^2}}$
-
-where $r_{X_i}$ is the rank of the $i$-th observation of $X$, $r_{Y_i}$ is the rank of the $i$-th observation of $Y$, and $\bar{r}_{X}$ and $\bar{r}_{Y}$ are the mean ranks of $X$ and $Y$, respectively.
-
-Spearman's $\rho$ is then computed similarly to Pearson's correlation but on these ranks:
-
-$\rho = \frac{\sum_{i=1}^{n}(r_{X_i} - \bar{r}_{X})(r_{Y_i} - \bar{r}_{Y})}{\sqrt{\sum_{i=1}^{n}(r_{X_i} - \bar{r}_{X})^2}\sqrt{\sum_{i=1}^{n}(r_{Y_i} - \bar{r}_{Y})^2}}$
-
-where $r_{X_i}$ is the rank of the $i$-th observation of $X$, and $r_{Y_i}$ is the rank of the $i$-th observation of $Y$.
-
--   A value of $\rho$ close to 1 indicates a strong positive monotonic relationship (as one variable increases, so does the other), while a value close to -1 indicates a strong negative monotonic relationship. A value around 0 suggests little or no monotonic association.
-
--   This method is robust to non-normality and outliers since it relies on the order (ranks) rather than the actual values.
-
-
 ```{r}
 #| echo: true
 #| message: false
@@ -734,8 +454,6 @@ delitos_data %>%
 Absolute Spearman's $\rho$ values are less than 0.2, this show us low correlation.
 
 # Spatial Neighborhood Matrices {.unnumbered}
-
-This section is based on *Spatial statistics for data science theory and practice with R*. See [@Moraga2023].
 
 ## Neighbors Based on Contiguity
 
